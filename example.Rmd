@@ -1,0 +1,179 @@
+---
+title: "Example Solution"
+author: "Daniel W. Kennedy"
+date: "September 24, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Example
+
+```{r}
+devtools::find_rtools(debug = TRUE)
+library(rstan)
+
+data("nhtemp")
+plot(nhtemp,ylab = expression(Temperature ~(degree~"F")),xlab = "Year")
+```
+
+The `nhtemp` data-set in R is a time series of temperatures (measured in $^\circ$F) collected in New Haven, Connecticut over 60 years from 1912-1971. The proposed model for the process is that the temperature depends on the previous year's temperature as well global temperatures, which are assumed to rise linearly each year:
+\[
+  y_i = \alpha + \beta y_{i-1} +\gamma i + \epsilon_i,
+\]
+where
+\[
+  \epsilon_i \sim \text{Normal}{\left(0,\sigma^2\right)}.
+\]
+
+Explanation for each parameter is:
+
+  - $\alpha$ is an "intercept" temperature (it does not correspond exactly correspond to the expected temperature at $i=0$ as the stationary mean is $\alpha/\left(1-\beta\right)$$^\circ$F)
+  - $\beta$ is the first order autocorrelation parameter. If $\beta$ is 0, then there is no autocorrelation, whereas if $\beta$ is less than or greater than 0, then the current value $y_i$ will be dependent on the previous value $y_{i-1}$.
+  - $\gamma$ is the linear trend, where each year the average temperature increases by $\gamma$$^\circ$F.
+
+Create a Stan model and use MCMC sampling in R to:
+
+  1. Estimate the first order autocorrelation in the model.
+  2. Estimate the long term linear trend.
+  3. Forecast the temperature for the next 20 years (1972 - 1981) after the data-set.
+
+
+
+Use this code as a template for your Stan model:
+
+```{stan , output.var = "stan_template", eval = FALSE}
+data {
+  int<lower=0> N;
+  int<lower=2> N_new;
+  vector[N] y;
+}
+
+parameters {
+
+}
+
+model {
+  for (n in 2:N){
+    y[n] ~ normal(FILL, FILL);
+  }
+}
+
+generated quantities{
+  real y_new[N_new];
+  y_new[1] = normal_rng(FILL, FILL);
+  for (n in 2:N_new){
+    y_new[n] = normal_rng(FILL, FILL);
+  }
+}
+```
+
+## Solution:
+
+The following Stan model should allow us to estimate the model parameters and forecast temperature for proceeding years:
+
+```{stan , output.var = "full_stan_model", eval = FALSE}
+data {
+  int<lower=0> N;
+  int<lower=2> N_new;
+  vector[N] y;
+}
+
+parameters {
+  real gamma;
+  real alpha;
+  real beta;
+  real<lower=0> sigma;
+}
+model {
+  for (n in 2:N)
+    y[n] ~ normal(alpha + beta * y[n-1] + gamma * n, sigma);
+}
+
+generated quantities{
+  real y_new[N_new];
+  y_new[1] = normal_rng(alpha + beta * y[N] + gamma * (N + 1), sigma);
+  for (n in 2:N_new){
+    y_new[n] = normal_rng(alpha + beta * y_new[n-1] + gamma * (n + N), sigma);
+  }
+}
+```
+
+We now compile the model and sample for 5000 iterations on 4 parallel chains:
+
+```{r}
+ts_ar1.stanmodel <- stan_model(file = "models/ts_ar1.stan")
+
+ts_ar1.stanfit <- sampling(ts_ar1.stanmodel,
+                           data = list(
+                             N = length(nhtemp),
+                             N_new = 20,
+                             y = as.vector(nhtemp)),
+                           iter = 5000,
+                           chains = 4,
+                           warmup = 1000)
+```
+
+We can now use the fabulous `ggmcmc` package to plot our MCMC chains and make sure that they have converged:
+
+```{r}
+library(ggmcmc)
+ggs_traceplot(ggs(ts_ar1.stanfit),family = c("gamma|alpha|beta|sigma"))
+ggs_autocorrelation(ggs(ts_ar1.stanfit),family = c("gamma|alpha|beta|sigma"))
+ggs_running(ggs(ts_ar1.stanfit),family = c("gamma|alpha|beta|sigma"))
+ggs_density(ggs(ts_ar1.stanfit),family = c("gamma|alpha|beta|sigma"))
+```
+
+We can get numerical summaries for your parameters as well:
+```{r}
+print(ts_ar1.stanfit,pars = c("gamma","alpha","beta","sigma"))
+```
+
+We therefore find there is compelling evidence for a linear trend, where temperatures rise by 0.03(95\% CI: 0.01,0.05)$\circ$F per year. There is also very little evidence of autocorrelation, once the linear trend is taken into account, as the credible interval for $\beta$ covers 0 (-0.17,0.37).
+
+
+We can extract and plot our forecasted temperatures using the `As.mcmc.list()` function. There may be a simpler way of converting the MCMC samples to a data-frame, however using the `do.call()` and `lapply()` functions are used here:
+
+```{r}
+predictions <- As.mcmc.list(ts_ar1.stanfit,pars = "y_new")
+predictions <- 
+  do.call(
+    rbind.data.frame, 
+    lapply(1:4, function(x){return(cbind(predictions[[x]],chain = x,iter = 1:nrow(predictions[[x]])))}))
+
+library(reshape2)
+predictions <- predictions %>% melt(id = c("chain","iter"))
+# Convert the year to a numeric variable:
+levels(predictions$variable) <- 1971 + 1:length(levels(predictions$variable))
+predictions$variable <- as.numeric(as.character(predictions$variable))
+
+# Calculate the mean, upper and lower quartiles, and bounds for a 90% Prediction Interval.
+prediction_summary <- 
+predictions %>% group_by(variable) %>% 
+  summarise(mean = mean(value),
+            upper_q = quantile(value,0.75),
+            lower_q = quantile(value,0.25),
+            upper_ci = quantile(value,0.95),
+            lower_ci = quantile(value,0.05))
+
+# Plot the real data:
+plot <- ggplot() + geom_line(data = data.frame(y = as.vector(nhtemp), x = 1912:1971),aes(x=x,y=y))
+
+# Plot the mean prediction
+plot <- plot + geom_line(data = prediction_summary, mapping = aes(x = variable, y = mean))
+
+# Plot the upper and lower quartiles as a ribbon:
+plot <- plot + geom_ribbon(
+  data = prediction_summary, 
+  mapping = aes(x = variable, ymin = lower_q, ymax = upper_q),alpha = 0.3, fill = "red")
+
+# Plot the 90% Prediction interval as a lighter ribbon.
+plot <- plot + geom_ribbon(
+  data = prediction_summary, 
+  mapping = aes(x = variable, ymin = lower_ci, ymax = upper_ci),alpha = 0.2, fill = "red")
+plot <- plot + labs(y = expression(Temperature ~(degree~"F")),x = "Year")
+plot
+```
+
