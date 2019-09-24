@@ -1,0 +1,741 @@
+---
+title: "The BRAG Guide to Stan"
+author: "Aminath Shausan, Edgar Santos Fernandez, Daniel Kennedy"
+date: "26/09/2019"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction
+
+---
+(10 mins)
+---
+
+This tutorial provides a basic introduction to the programming language Stan. [Stan](https://mc-stan.org/) is a free and open-source probabilistic modelling language specifically used  for Bayesian statistical inference, including MCMC optimisation and variational inference. It has received much attention and as a faster platform for Bayesian inference compared to others such as JAGS and WinBUGS, through the use of Hamiltonian Monte Carlo (HMC) sampling. 
+
+In this tutorial, we will learn how to implement Bayesian analysis in Stan from defining the model to reading outputs. First, we define the model and prior information as *code blocks* in Stan, then submit the model for computation and sampling in R.  Afterwards, we will explore a selection of simple model fit examples applicable to  practical situations, including sports, education and disease spread. Finally, we will learn about the advantages and limitations of Stan language. 
+
+From our experience, it may take a while to setup *RStan*, so we recommend you to **set up *RStan*   beforehand**. You will need to:
+
+  1. Install  [R](https://cloud.r-project.org/bin/windows/) for Windows version 3.4.0 or later.
+  2. Install [RStudio](https://www.rstudio.com/products/rstudio/download/preview/) for Windows version 1.2.x or later.
+  3. Create a local folder to store *RStan* package, its dependencies and all other packages used in this tutorial (eg.Documents/Stan-tutorial/r-libraries) 
+  4. Open RStudio and use *.libPath()* function to direct RStudio session to the created folder
+```R
+.libPaths("Documents/Stan-tutorial/r-libraries")
+```
+  5. Follow the instructions given on  RStan-Getting-Started [page](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started) to install and load *RStan*.
+
+Other packages required for this tutorial are: *tidyverse, bayesplot, deSolve*. 
+
+Stan models can be compiled in other platforms such as Python, MATLAB, Julia, Stata, Mathematica, or Scala. However, the examples discussed in this tutorial are run using *RStan* (the R interface to Stan) on Windows operating system. We do not cover theory of Bayesian statistics nor MCMC convergence, but expect users to have a basic understanding of these theories.  
+
+If you would like to use HPC during this tutorial, the procedure to follow is same as any other programming language. You may use the BRAG HPC [guide](https://github.com/ethangoan/hpc_guide) for this setup.  We do not cover how to setup Stan on Mac or any other operating system. 
+
+## Defining a model in Stan
+
+---
+15 mins
+---
+
+Stan models are specified in several blocks. The main ones are:
+
+  - `data`
+  - `parameters`
+  - `transformed parameters`
+  - `model`
+  - `generated quantities`
+  
+To illustrate the use of these blocks, let's set up a model for a coin-flip experiment. 
+
+```{r,message=FALSE,warning=FALSE}
+library(rstan)
+library(knitr)
+flip_data <- c(0,1,0,1,1,0,0,1,1,0)
+```
+
+We first need to tell Stan what our data look like, and every quantity in Stan is *declared* as a particular type of quantity (`int`, or `real`) and bounds are given if appropriate. To specify a vector, we can use the square brackets (`[]`) with the length of the vector inside the brackets.
+
+```{stan , output.var = "gen_quant", eval = FALSE, tidy = FALSE}
+data {
+  int<lower=0> n_trials; // number of coin-flip trials
+  int<lower=0,upper=1> Y[n_trials]; // data (heads = 1, tails = 0)
+}
+```
+
+We now specify the parameters of the model. Suppose for illustration that instead of the standard bernoulli parameter $\theta \in \left[0,1\right]$ we are interested in the logit-probability parameter $\phi$:
+\[
+  \phi = \text{logit}{\left(\theta\right)} = \text{log}{\left(\frac{\theta}{1-\theta}\right)}
+\]
+We declare $\phi$ in the `parameter` block:
+```{stan , output.var = "gen_quant", eval = FALSE}
+parameters {
+  real phi; // logit-probability as parameter of interest
+}
+```
+
+The `transformed parameter` block declares and *defines* any values which are a function of the parameters. Stan's `bernoulli` function doesn't accept the logit-probability $\phi$, so we will define $\theta$ here to use it when defining the model. We use upper and lower bounds to precisely define the values which $\theta$ can have:
+```{stan , output.var = "gen_quant", eval = FALSE}
+transformed parameters {
+  real<lower=0,upper=1> theta;
+  theta = exp(phi)/(1+exp(phi)); // probability as a function of logit_prob.
+}
+```
+
+We are now ready to define the model. This is the generating process of the data, based on the parameter values. The prior distributions of the parameters are also defined in this block. Stan is quite nice in that the sampling distribution of a vector can be defined in a single line, as well as the traditional for-loop method from JAGS and WinBUGS.
+```{stan , output.var = "gen_quant", eval = FALSE}
+model {
+  phi ~ normal(0,10^4); // prior for phi is a wide (SD = 10^4) normal distribution centered at 0.
+
+  Y ~ bernoulli(theta); // define the likelihood with vector statement.
+  
+  // You can also define using a for loop, looping over each trial:
+  // for(trial in 1:n_trials){
+  //   Y[trial] ~ bernoulli(theta); // define 
+  // }
+}
+```
+
+Finally, any quantities generated *after* sampling has occurred, such as predicted values for new data, or transformations of the parameter(s) not necessary for the `model{}` block. We will here generate the relative odds, as well as a predicted value for a new trial.
+```{stan , output.var = "gen_quant", eval = FALSE}
+generated quantities {
+  int<lower=0,upper=1> Y_dash; // Prediction for new trial
+  real<lower=0> relative_odds; // Relative odds (how likely is heads compared to tails?)
+  relative_odds = prob/(1-prob);
+  Y_dash = bernoulli_rng(prob);
+}
+```
+
+The above blocks have been saved in a text file called `coin_flip.stan`. By using the `.stan` filetype, Rstudio knows it is a Stan model and applies the correct formatting to it. It also provides a syntax-checking function, so it can tell you when you've left off a "`;`" and the end of lines.
+
+To run the code, we can either feed it straight into the `stan()` function:
+
+```{r, eval = FALSE}
+cf_result.stanfit <- stan(
+  file = "models/coin_flip.stan",
+  data = list(
+    n_trials = length(flip_data),
+    Y = flip_data
+  ))
+```
+
+or we can compile the model first:
+```{r, eval = FALSE}
+cf.stanmodel <- stan_model(
+  file = "models/coin_flip.stan"
+)
+```
+
+and then use the `sampling()` function:
+
+```{r,include = FALSE, eval = FALSE}
+cf_result.stanfit <- sampling(
+  object = cf.stanmodel,
+  data = list(
+    n_trials = length(flip_data),
+    Y = flip_data
+  ))
+```
+
+If the underlying file `models/coin_flip.stan` doesn't change, then Stan will only compile the model the first time `stan()` or `stan_model()` are called.
+
+There are two more blocks which may be of use:
+  - `functions`: For definining your own functions (see [Stan Reference Manual](https://mc-stan.org/docs/2_20/reference-manual/index.html) Chapter 9 for details)
+  - `transformed data`: For declaring and defining intermediate values which are functions of your data. For example, for positive skewed data, you might model the log of the data instead of the raw data:
+
+```{stan , output.var = "gen_quant", eval = FALSE, tidy = FALSE}
+transformed data {
+  real log_Y[n_trials];
+  log_Y = log(Y)
+}
+```
+
+## Example: Fitting Basketball Data
+In this example, we use basketball shooting data to illustrate the use of a Bayesian logistic regression model.
+
+Loading the R libraries we need:
+```{r, warning=FALSE, message=FALSE}
+
+library("ggplot2")
+library("rstan")
+library("bayesplot")
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+source('source-code/0 utils.R') # to plot the basketball court
+set.seed("314413") #making the results reproducible
+```
+
+### Data
+We import the shooting data from the file called ```basketball.csv``` into a data frame called ```df``` and
+we check the structure of the variables.
+
+```{r, warning=FALSE, message=FALSE}
+df <- read.csv("data/basketball.csv")
+#str(df)
+df$outcome <- factor(as.character(df$biscorecounter))
+```
+### The problem
+We formulate the hypothesis that some of the independent variables or predictors play a crucial role in the shooting effectiveness (success or fail). For instance, we known that the distance from the basket of the player taking the shot (```dis```) is relevant to the outcome. 
+We assess the impact of the predictors on the response variable ```outcome```.
+
+A summary of four covariates and the response variable is shown below:
+
+| Variable        | type           | Description  |
+|---------------|-------------|------|
+| outcome   |  binary   |  scoring (1), missing(0)     |
+| dis   |  numeric   |  distance from the basket (in foot)     |
+| rad   |  numeric   |  angle (in radians). Zero corresponds to the line from basket to basket   |
+| postime  |  integer   |  possession time from 0 to 25 seconds   |
+| dis_trav  |  numeric   | distance traveled (in foot) |
+
+We visually inspect the distribution of the four covariates in successful (1) and missed shots (0) using box plots.
+
+```{r, warning=F, message=F }
+par(mfrow = c(2,2), oma = c(2,4,3,1.5) , mar = c(1.5,2,1.5,1.5))
+boxplot(dis ~ outcome, data = df, main= "distance", ylab= "distance") 
+boxplot(rad ~ outcome, data = df, main="angle", ylab="angle") 
+boxplot(postime ~ outcome,data = df, main="possession time", ylab="possession time") 
+boxplot(dis_trav ~ outcome, data = df, main="distance travelled", ylab="distance travelled") 
+```
+
+```{r }
+P_180 + 
+  geom_jitter(data = df, aes(x = y-10, y = -x+6, 
+                          shape = outcome,
+                          col = outcome), alpha= 0.2) + 
+            theme_bw() + xlim(0,47) 
+```            
+            
+### Bayesian model
+We define the model in Stan language as follows.
+Since the response is binary, we use the Bernoulli likelihood (```bernoulli_logit ``` function).
+We use a logistic regression model with an intercept $\beta_1$ and slopes $\beta_2$, $\beta_3$, etc.
+
+
+```{r}
+model <- '
+  data {
+    int<lower=0> N;
+    vector[N] dis;
+    vector[N] rad;
+    vector[N] postime;
+    vector[N] dis_trav;
+    int<lower=0,upper=1> outcome[N];
+    
+  }
+  parameters {
+    real beta[5];
+  }
+  model {
+    outcome ~ bernoulli_logit(beta[1] + beta[2] * dis + beta[3] * rad + beta[4] * postime + beta[5] * dis_trav);
+  
+  //priors
+  beta ~ normal(0, 100);  
+  }
+  '
+
+```
+
+In rjags/BUGS the model would be defined as follows:
+```{r, eval = F}
+model_jags = "
+model {
+  for (i in 1 : N) {
+    outcome[i] ~ dbern(p[i])   #likelihood
+    logit(p[i]) <- beta[1] + beta[2] * dis[i] + beta[3] * rad[i] + beta[4] * postime[i] + beta[5] * dis_trav[i]
+  }
+  
+  # Priors
+  for (j in 1 : 5) {
+    beta[j] ~ dnorm(0, 1 / 100 ^ 2)
+  }
+
+}"
+```
+
+We then create a list containing the number of observations, the predictors, and the response.  
+
+
+```{r}
+data <- list(N = nrow(df), # total numb of shots
+             outcome = as.numeric(as.character(df$outcome)),
+             dis= df$dis,
+             rad = df$rad,
+             postime = df$postime,
+             dis_trav = df$dis_trav
+) 
+
+```
+
+To fit the model in ```stan``` , we have to specify the model, the data list created above. We also need the other parameters e.g. the number of chains and iterations, etc.    
+
+```{r, echo = F, warning=FALSE, message=FALSE, cache=F, eval=T}
+fit <- readRDS('data/fit_basket.RDS')
+```
+
+
+```{r, warning=FALSE, message=FALSE, cache=F, eval=F}
+fit <- stan(model_code = model,
+                 model_name = "model",
+                 pars = 'beta', 
+                 data = data,
+                 iter = 5000,   
+                 warmup = 2000, 
+                 thin = 2, 
+                 chains = 3, 
+                 verbose = F,
+                 seed = 2019,
+                 refresh = max(5000/10, 1)
+) 
+```
+
+```{r, warning=FALSE, message=FALSE}
+stats <- summary(fit)
+stats <- stats$summary
+kable(stats[1:5,])
+```
+
+Performing then a diagnostic of the chains by visually inspecting the trace and the posterior density plots.
+
+
+```{r,warning=FALSE, message=FALSE}
+
+color_scheme_set("blue")
+posterior <- as.array(fit)
+mcmc_dens_overlay(posterior, pars = c('beta[1]', 'beta[2]', 
+                                              'beta[3]', 'beta[4]',
+                                              'beta[5]'))
+
+mcmc_trace(posterior, pars = c('beta[1]', 'beta[2]', 
+                                       'beta[3]', 'beta[4]',
+                                       'beta[5]')) 
+
+
+mcmc_acf(posterior, pars = c('beta[1]', 'beta[2]', 
+                                    'beta[3]', 'beta[4]',
+                                    'beta[5]'), lags = 10)
+
+
+```
+
+
+## Example:  and code examples from Aminath (15 minutes)
+- simple 8 school example (Complete pooling) 
+- hierarchical 8 school example 
+- discuss about loo() package for model comparision if time permits 
+
+## Example: Fitting an Ordinary Differential Equation Model 
+
+In this example, we fit a simple Susceptible-Infective-Recovered (SIR) epidemic model to simulated data. The SIR epidemic model is used to describe the spread of self limiting diseases, such as  measles,   within a  human population. The model comprises of three types of individuals; susceptible, infected and recovered. Susceptible individuals become infected   when in contact with infected individuals. Infected individuals remain infectious for a period of time and then recover with life long immunity. For the example considered here, let $S(t)$, $I(t)$ and $R(t)$ be the proportion of susceptible, infected and recovered individuals, respectively, at time $t$.  We assume that the population is closed, so that $S(t) +I(t)+R(t) =1$. The dynamics of this SIR epidemic is described by the following system of ordinary differential equations (ODEs). 
+\[
+\begin{align}
+\frac{dS}{dt} = & \,  - \beta  S I \nonumber\\
+\frac{dI}{dt} = & \,  \beta S I -   \gamma I\nonumber\\
+\frac{dR}{dt} = & \,  \gamma I \nonumber
+\end{align} 
+\]
+Parameters $\beta$ and $\gamma$ correspond to the infection and recovery rates, respectively. Let us first visualise the dynamic of  these equations, using given parameter values  and initial conditions.  In practice, these are not know, but can be estimated from data.  We use the *deSolve* package developed for `R` interface to solve the system. 
+
+```{r,eval = TRUE, warning=FALSE, message = FALSE}
+library(deSolve)
+library(dplyr)
+library(rstan)
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())  #executes multiple Markov chains in parallel
+#-----------------------------------
+#Follow the following two steps to repare data to feed into R's 'ode()'  function (see the 'ode' function help page for more details)
+#1. define the SIR ODE system as a function 
+SIR_model <- function(times, y, pars) {
+  with(as.list(c(pars, y)), {
+    
+    dS <- - beta * y[1] * y[2]
+    dI <- beta * y[1] * y[2] - gamma * y[2]
+    dR <- gamma * y[2]
+
+    res <- c(dS,dI,dR)
+    list(res)
+  })
+}
+
+#2. define initial condition of ODEs and parameters 
+I0 <- 0.01    # initial fraction infected
+S0 <- 1 - I0 # initial fraction susceptible
+R0 <- 0
+pars <- c(beta = 0.5, gamma = 0.1) #parameters 
+inits <- c(S0, I0, R0)              #initial condition of ODE
+times <- 0:60                       #time span of the epidemic (days)
+
+# Solve the ODEs using 'ode' function
+SIR_dynamics <- ode(y = inits, times=times, func = SIR_model, parms=pars, method="ode45")
+
+#store the output in a data frame for later use
+SIR_dynamics <- data.frame(SIR_dynamics)
+colnames(SIR_dynamics) <- c("time", "S", "I", "R")
+
+```
+
+Let us now  visualise the dynamic of these equations. 
+```{r,eval = TRUE, warning=FALSE}
+plot(NA,NA, xlim = c(0, 60), ylim=c(0, 1), xlab = "Time (days)", ylab="Proportion of population")
+lines(SIR_dynamics$S ~ SIR_dynamics$time, col="black")
+lines(SIR_dynamics$I ~ SIR_dynamics$time, col="blue")
+lines(SIR_dynamics$R ~ SIR_dynamics$time, col="red")
+legend(x = 40, y = 0.9, legend = c("Susc.", "Inf.", "Recov."),
+       col = c("black",  "blue", "red"), lty = c(1, 1,1), bty="n")
+```
+
+This gives us the *true* epidemic dynamics of the population.  In practice, it may not be possible to determine the proportion infecteds at each day, nor to determine disease status of all individuals at a given time.  Rather, we can take a sample of individuals from the population at various time points  and find out how many are infected. We expect binomially distributed error in these estimates, with probability of success given by the infected dynamic of the ODEs.  The sampling can be done as follows. 
+
+```{r,eval = TRUE, warning=FALSE, message = FALSE}
+n_obs <- 30     # number of days sampled 
+n_sample <- 50   # number of  individuals sampled per day
+
+# Choose which days the samples are taken. 
+ts <- sort(sample(1:60, n_obs, replace=F))
+
+# Extract the "true" fraction of the population infected at each of the sampled days:
+ prop_inf <- SIR_dynamics[SIR_dynamics$time %in% ts, 3]
+
+# Generate binomially distributed data.
+sample_y <- rbinom(n_obs, n_sample, prop_inf)
+
+```
+
+Now that we have some simulated data, let us estimate parameters $\beta$, $\gamma$ and initial conditions of the ODE using the following Stan program, which is a slightly different version available [here](https://jrmihalj.github.io/estimating-transmission-by-fitting-mechanistic-models-in-Stan/).  The Stan model is already saved  in a text file called `SIR_fit.stan`, in the `models` folder. 
+```{r,eval = FALSE, warning=FALSE, message = FALSE}
+
+  functions {
+     real[] SIR_ode(real t,  //time
+     real[] y,               //state
+     real[] params,          //parameters
+     real[] x_r,             //real data
+     int[] x_i) {            //integer data
+  
+     real dydt[3];
+   
+     real beta = params[1];
+     real gamma = params[2];
+     
+     dydt[1] = - beta * y[1] * y[2];
+     dydt[2] = beta * y[1] * y[2] - gamma * y[2];
+     dydt[3] = gamma * y[2];
+  
+  return dydt;
+ }
+}
+data {
+  int<lower = 1> n_obs;      // number of days sampled
+  int<lower = 1> n_sample;   // number of individuals sampled at each time point.
+  int y[n_obs];              // observed data
+  real t0;                   // initial time point  
+  real ts[n_obs];            // time points that were sampled
+  int<lower = 1> n_pred;     // number of predicted data points
+  real t_pred[n_pred];        // time points at which predictions are made
+}
+transformed data {
+  real x_r[0];
+  int x_i[0];
+}
+parameters {
+  real<lower = 0> params[2];      // the two model parameters, constrained to be positive
+  real<lower = 0, upper = 1> I0;  //initial fraction of infectives, constrained to be between 0 and 1
+}
+
+transformed parameters{
+  real y_hat[n_obs, 3];     // output from the ODE solver
+  real y0[3];                // initial conditions of ODE
+  
+   y0[1] = 1-I0;
+   y0[2] = I0;
+   y0[3] = 0;
+  
+    // solve ODE for observed time points
+  y_hat = integrate_ode_rk45(SIR_ode, y0, t0, ts, params, x_r, x_i);
+  
+}
+model {
+  //priors
+  params ~ normal(0,2); 
+  I0 ~ normal(0.5, 0.5);  
+  
+ //likelihood 
+     y ~ binomial(n_sample, y_hat[, 2]); 
+}
+generated quantities {
+  real y_pred[n_pred, 3];  //prediction from ode  
+ 
+  // Generate predicts  over the entire time span:
+  y_pred = integrate_ode_rk45(SIR_ode, y0, t0, t_pred, params, x_r, x_i);
+}
+```
+
+Note that the `functions` block defines the system of ODEs as a function (`SIR_ode`) with specific signature. The function takes in a time `t`(a real value, for time dependent parameters), a system state `y` (real  array), system parameters  `params` (real array), real data (`x_r`) and integer data (`x_i`). The `SIR_ode` function  returns the array of derivatives of the system with respect to time, evaluated at time `t` and state `y`. The `SIR` equations do not have time dependent parameters nor use real or integer data, so these are not used. Nevertheless, these arguments must be included in the system function. 
+
+The `data` block defines a real value `t0`, which is passed to Stan's ODE solver `integrate_ode_rk45`. We set this value as $0$ for this example. It also defines number of predicted data points, `n_pred`, and the predicted time points, `t_pred`, both are used in the `generated quantities block`.   
+
+The `transformed data` block consists of two empty data arrays. These empty arrays can also be defined in the ODE solver as: 
+```{r,eval = FALSE, warning=FALSE, message = FALSE}
+y_hat = integrate_ode_rk45(SIR_ode, y0, t0, ts, params, x_r, x_i,
+                   rep_array(0.0, 0), rep_array(0, 0));
+```
+We include these in the `transformed block` for illustration. 
+
+The solutions to the `SIR` equations  are defined as `transformed parameters`. This allows them to be used in the `model` block and inspected in the output. We use the Runge-Kutta solver, `integrate_ode_rk45()`, to solve the system of ODEs. The Runge-Kutta solver is used to solve non-stiff systems. To compute solutions, this function requires the ODE function (defined as `SIR_ode`), initial state (`y0`), initial time (`t0`), requested solution times (`ts`), parameters (`params`) and real and integer data (`x_r`, `x_i`, respectively). The value assigned to  `t0` must be less than the values assigned for `ts`. For `stiff ODEs`, the solver used is `integrate_ode_bdf()` function, with same arguments as used for the `integrate_ode_rk45()`.   Both integration functions are limited as to the origin of variables used in their arguments. The arguments `ts`, `x_r` and `x_i` must be expressions that only involve data or transformed data variables. The initial state `y0` and parameters `params` are the only arguments which may involve parameters.      
+
+The `model` block defines priors and the likelihood. Finally, we compute predictions, using  the fitted values,  in the `generated quantities` block. Rather than computing predictions at the sampled time points, we   make predictions for the entire epidemic time span. 
+
+To fit the model, we need to assign values for the variables defined in the `data` block. 
+```{r,eval = FALSE, warning=FALSE, message = FALSE}
+data <- list(n_obs = n_obs,              #number of days sampled
+              n_sample = n_sample,      #number of individuals sampled
+              y = sample_y,             #observed data from binomial distribution
+              t0 = 0,                   #initial time for ODE
+              ts = ts,                 #time points at which observations are made
+              n_pred = length(1:60),   #number of predictions
+              t_pred = c(1:60)        #times at which predictions are made
+         )
+#save(data, file = "data/SIR_data.RData", envir = .GlobalEnv)
+```
+
+We have saved the data as `SIR_data.RData` in the `data` folder. You may wish to use the saved data  for model fitting.  Let us first test the Stan program using a shorter chain. 
+```{r,eval = FALSE, warning=FALSE, message = FALSE}
+test <- stan("models/SIR_fit.stan",     #the path and name of the Stan program
+            data = data,               #list containing data
+             chains = 1,               #number of MCMC chains
+            iter = 10,                #number if iterations per chain
+            control = list(adapt_delta = 0.8, max_treedepth = 10)
+            )
+```
+No errors are produced for this test run. We can now fit the  model using   multiple chains  with  more iterations. 
+```{r,eval = FALSE, warning=FALSE, message = FALSE}
+SIR_fit <- stan(fit = test,
+           data =  data,
+            chains = 4,
+           warmup = 1000,
+           iter = 2500
+           )
+#save(SIR_fit, file = "results/SIR_fit.RData", envir = .GlobalEnv)
+```
+
+We have saved result of this fit  as `SIR_fit.RData`,  in the  `results` folder. We must now check some MCMC convergences and if parameters used to simulate data can be recovered. The `traceplot()` and `print()` functions can be used for these checks.
+```{r,eval = FALSE, warning=FALSE, message = FALSE}
+traceplot(SIR_fit, pars = c("params", "I0", 'lp__'),  inc_warmup =TRUE)
+print(SIR_fit, pars = c("params", "y0"), prob = c(0.025, 0.5, 0.975),digits=3)
+```
+
+```{r,eval = TRUE, warning=FALSE, message = FALSE, echo=FALSE}
+load('results/SIR_fit.RData') #loads the saved data 
+traceplot(SIR_fit, pars = c("params", "I0", 'lp__'),  inc_warmup =TRUE)
+print(SIR_fit, pars = c("params", "y0"), prob = c(0.025, 0.5, 0.975),digits=3)
+```
+The trace plots show that the chains mixed well and all chains converging to same posterior.  Output from the `print` function shows posterior summary along with `Rhat` value for each parameter. The median estimate  are $\beta = 0.442$ and $\gamma = 0.103$,  $S(0) = 0.982$, $I(0) =  0.018$ and $R(0) = 0$, which are close to the values used to generate data. The `Rhat`statistic is the ratio of between-chain variance to within-chain variance and should be approximately $1\pm 0.1$ if the chains have converged, which is true for this fit.   
+
+Let us now  plot posterior predictions to see how well the model fits observed data. 
+```{r,eval = FALSE, warning=FALSE, message = FALSE}
+#extract the predicted posterior samples 
+post <- extract(SIR_fit, pars= ('y_pred'))
+
+#compute the 95% posterior credible interval 
+cred_median <- apply(post$y_pred[,,2], 2, median)
+cred_low <- apply(post$y_pred[,,2], 2, quantile, probs=c(0.025))
+cred_high <- apply(post$y_pred[,,2], 2, quantile, probs=c(0.975))
+
+#create two data frames; one for observed data and one for predicted data
+df_obs <- data.frame(y = sample_y/n_sample, time =  data$ts)
+df_pred <- data.frame(cred_median, cred_low, cred_high, time =  data$t_pred)
+
+#plot the credible interval with observed data
+ggplot(df_obs, aes(x=time, y=y)) +
+  geom_point(col="black", shape = 19, size = 1.5) +
+  geom_line(data = df_pred, aes(x=time, y=cred_median), color = "blue") +
+  geom_line(data = df_pred, aes(x=time, y=cred_high), color = "blue", linetype=3) +
+  geom_line(data = df_pred, aes(x= time, y=cred_low), color = "blue", linetype=3) +
+   labs(x = "Time (days)", y = "Proportion infected")
+```
+
+```{r,eval = T, warning=FALSE, message = FALSE, echo=F}
+load('data/SIR_data.RData') #loads the saved data 
+
+post <- extract(SIR_fit, pars= ('y_pred'))
+#compute the 95% posterior credible interval 
+cred_median <- apply(post$y_pred[,,2], 2, median)
+cred_low <- apply(post$y_pred[,,2], 2, quantile, probs=c(0.025))
+cred_high <- apply(post$y_pred[,,2], 2, quantile, probs=c(0.975))
+
+#create two data frames; one for observed data and one for predicted data
+df_obs <- data.frame(y = data$y/data$n_sample, time =  data$ts)
+df_pred <- data.frame(cred_median, cred_low, cred_high, time =  data$t_pred)
+
+#plot the credible interval with observed data
+ggplot(df_obs, aes(x=time, y=y)) +
+  geom_point(col="black", shape = 19, size = 1.5) +
+  geom_line(data = df_pred, aes(x=time, y=cred_median), color = "blue") +
+  geom_line(data = df_pred, aes(x=time, y=cred_high), color = "blue", linetype=3) +
+  geom_line(data = df_pred, aes(x= time, y=cred_low), color = "blue", linetype=3) +
+   labs(x = "Time (days)", y = "Proportion infected")
+```
+
+The Stan model can recreate the observed dynamics reasonably well. In this example, we described the `SIR` system of ODEs using fractions of the population, instead of numbers. This allowed us to estimate initial fractions of the ODEs, as well as ODEs parameters ($\beta$ and $\gamma$), as Stan can sample only continuous parameters. Currently, Stan cannot handle integer parameters.   
+
+## Exercise: Fitting a time series model in Stan
+
+```{r,include=FALSE,warning=FALSE,message = FALSE}
+devtools::find_rtools(debug = TRUE)
+library(rstan)
+```
+
+```{r}
+data("nhtemp")
+plot(nhtemp,ylab = expression(Temperature ~(degree~"F")),xlab = "Year")
+```
+
+The `nhtemp` data-set in R is a time series of temperatures (measured in $^\circ$F) collected in New Haven, Connecticut over 60 years from 1912-1971. The proposed model for the process is that the temperature depends on the previous year's temperature as well global temperatures, which are assumed to rise linearly each year:
+\[
+  y_i = \alpha + \beta y_{i-1} +\gamma i + \epsilon_i,
+\]
+where
+\[
+  \epsilon_i \sim \text{Normal}{\left(0,\sigma^2\right)}.
+\]
+
+Explanation for each parameter is:
+
+  - $\alpha$ is an "intercept" temperature (it does not correspond exactly correspond to the expected temperature at $i=0$ as the stationary mean is $\alpha/\left(1-\beta\right)$$^\circ$F)
+  - $\beta$ is the first order autocorrelation parameter. If $\beta$ is 0, then there is no autocorrelation, whereas if $\beta$ is less than or greater than 0, then the current value $y_i$ will be dependent on the previous value $y_{i-1}$.
+  - $\gamma$ is the linear trend, where each year the average temperature increases by $\gamma$$^\circ$F.
+
+Create a Stan model and use MCMC sampling in R to:
+
+  1. Estimate the first order autocorrelation in the model.
+  2. Estimate the long term linear trend.
+  3. Forecast the temperature for the next 20 years (1972 - 1991) after the data-set.
+
+
+Use this code as a template for your Stan model:
+
+```{stan , output.var = "stan_template", eval = FALSE}
+data {
+  int<lower=0> N;
+  int<lower=2> N_new;
+  vector[N] y;
+}
+
+parameters {
+  FILL
+}
+
+model {
+  for (n in 2:N){
+    y[n] ~ normal(FILL, FILL);
+  }
+}
+
+generated quantities{
+  real y_new[N_new];
+  y_new[1] = normal_rng(FILL, FILL);
+  for (n in 2:N_new){
+    y_new[n] = normal_rng(FILL, FILL);
+  }
+}
+```
+
+## Hamiltonian Monte Carlo: the engine under the hood
+
+Stan uses *Hamiltonian Monte Carlo (HMC)* in order to generate samples from the posterior distribution of our model parameters. HMC tends to be much more efficient than other types of Markov Chain Monte Carlo (MCMC) sampling, such as Random Walk Metropolis-Hastings (RW-MH) and Gibbs sampling, especially when the "shape" of the posterior isn't a nice Gaussian peak. To understand why HMC outperforms these other methods, we have to understand why the other methods fail, so let's have a refresher as to how they work.
+
+### Random Walk Metropolis-Hastings
+
+The RW-MH method is a well-used method for generating samples to approximate the posterior distribution, and it is a very simple recipe to follow. From the current point:
+
+  1. Pick (i.e. sample) a distance and direction in the parameter space.
+  2. Move in a straight line in the sampled direction for the sampled distance to get to the new point.
+  3. Calculate ratio of posterior of current point to new point.
+  4. Accept or reject: move to the new point with probability equal to the ratio, otherwise stay at the current point.
+This is repeated until the MCMC chain has satisfactorily converged to the target distribution.
+
+The distribution for sampling the distance and direction is called the *kernel*. If the kernel is symmetric, meaning that the probability of moving forward a given distance is equal to the probability of moving backward, then the acceptance probability is just equal to the ratio of posteriors. If the kernel is not symmetric, then the acceptance probability needs to incorporate this in order to satisfy a necessary property called *detailed balance*.
+
+An interactive animation of RW-MH can be found [here](https://chi-feng.github.io/mcmc-demo/app.html). Select "RandomWalkMH" for the algorithm and "banana" for the target distribution. The goal of the MCMC is have a satisfactory convergence of the sample distribution, given by the histograms on the bottom and left margins, to the target distribution, given by the corresponding densities. Run the chain for a while, and try to diagnose why it might take RW-MH a long time to converge. Consider that the perfect sampler would just be drawing from the target distribution itself, so if the current point is in the left tail, it is just would be just as likely to appear in the right tail for the next sample as the left. You can also change the kernel to sample smaller or larger distances using the "Proposal $\sigma$" algorithm option.
+
+### Gibbs Sampling
+
+Gibbs Sampling is a special case of the general class of Metropolis-Hastings algorithms, with the very nice property that samples are always accepted. It can be used when we know the conditional posterior distribution of each parameter, conditioning on the values of the other parameters. The recipe for getting a new sample from the current sample is as follows:
+
+  1. Sample a new value of parameter 1 from its conditional posterior, holding the values of the other parameters at their current values.
+  2. Sample a new value of parameter 2 from its conditional posterior, holding parameter 1 at its new value and the other parameters at their current values.
+  3. Repeat for all parameters until all have new values.
+
+To understand this graphically, consider the banana distribution from the previous example, where we have two parameters. To sample a new value of the horizontal parameter, holding the vertical parameter constant, we are essentially drawing a horizontal line at the height of the vertical parameter's current value, and sampling the horizontal parameter from that line. To sample a new value of the vertical parameter, then we are drawing a vertical line at the horizontal parameter's current value, and sample the vertical parameter from the line. Try and visualise this for a few iterations of sampling. Can you see why it might be hard for a Gibbs sampler to efficiently explore the target distribution?
+
+### Why are these samplers so slow?
+
+Hopefully you've now had a think, and tried to visualise why these two algorithms can become inefficient, taking a long time to converge to the target distribution. The big reason is that the shape of the kernel distributions of the two algorithms doesn't fit well with the shape of the posterior. The RW-MH selects the any direction with the same probability, but we can see that some directions point to high density areas while others point to very low density areas, and the result is a lot of rejections. We can sample smaller distances and improve the acceptance rate, but this can also make the algorithm less efficient, because it takes a long time to explore the target density. The Gibbs sampler always accepts new samples, but because it can only travel horizontally and vertically, it also takes a long time to get from the bend of the banana to the tails.
+
+### HMC: an "intelligent" sampler
+
+In the end neither of these algorithms are smart enough to sample the banana-shaped target density. RW-MH doesn't consider the target density's shape, and Gibbs samplers can only move vertically and horizontally. The genius of HMC is that it uses the curvature of the target density itself to inform the kernel distribution, allowing for both a high acceptance rate and good exploration of the target density. The recipe for HMC is as follows:
+
+  1. Pick/sample a distance and direction, i.e. a *momentum*.
+  2. Move for a short time, then evaluate the slope/gradient, and change "momentum" based on current momentum and slope.
+  3. Repeat a number of times to arrive at a new point.
+  4. Calculate ratio of posterior of current point to new point.
+  5. Accept or reject: move to the new point with probability equal to the ratio (and kernel density ratio).
+
+To visualise HMC, consider the target density as being like a 2 dimensional surface in 3D space, and invert it so the highest probability points are depressions. Consider that a ball on the surface would roll down into the depression, but if it was first "flicked" in some random direction, then it would roll around the surface, slowing down as it moved upwards to low probability regions, and speeding up as it rolls down to the high probability regions. In our idealised world there is no friction between the ball and the surface, so the ball never settles in the high probability regions but rolls around forever. This is essentially how HMC picks its new point, with a few caveats:
+
+  1. Instead of the target density, the "surface" is the logarithm of the target density.
+  2. We actually don't need to roll our ball around forever, so we just say to some finite amount of "time".
+  3. Computers generally can't evaluate the trajectory of the ball to infinitesimal time-steps, so instead of a smooth trajectory it is approximated by a series of small linear steps.
+  4. Because the trajectory is an approximation, in order to satisfy detailed balance we need to have an accept-reject step. Good news is that for HMC the acceptance probability is the ratio of the posterior density values (new/old) multiplied by a relatively simple function of the initial momentum.
+
+Don't get it? surfaces, balls, momentums... I thought we were fitting statistical models? A visualisation might help here! The same interactive animation as before ([link](https://chi-feng.github.io/mcmc-demo/app.html)) has a Hamiltonian Monte Carlo setting. Change the "Algorithm" option to "HamiltonianMC", tick "Animate Proposal" in the Visuallisation Options, and watch the HMC select new points by moving along a trajectory. Notice how it can get from one side of the banana to the other in relatively few steps compared to the RW-MH, and it's because the kernel is informed by the target density itself.
+
+### Limitations of HMC
+
+While Hamiltonian Monte Carlo represents a quantum leap in efficiency of MCMC compared to RW-MH and Gibbs sampling, it does have some issues that you should be aware of.
+
+  1. HMC is not (in itself) a solution for multimodal problems when the modes a far apart. HMC moves along a trajectory, so if there is a wide region of low density between the modes, the particle is unlikely to have the momentum to travel between them, so it rarely will. Unfortunately teleportation is not an option.
+  2. Tuning is required. The values of the number of steps and the length of "time" for each step will affect the efficiency of the algorithm. Increasing the number of steps will increase the acceptance rate, and thus the efficiency of the algorithm, however it will come at a higher computational cost. Lowering the amount of time per step will also increase the acceptance rate, but will make it slower to explore the target density, so it does not necessarily increase the efficiency. Fortunately, Stan uses the burn-in period to adaptively tune the time per step and number of steps, so you generally won't have to worry about this.
+  3. HMC is more computationally intensive, so it is generally written in a lower level language like C++. Again, Stan has you covered, so as long as you can write your model in the Stan language, it can handle the rest.
+
+### The No-U-Turns Sampler (NUTS)
+
+Stan actually uses a more sophisticated algorithm than HMC, but HMC is still at its core. NUTS improves on the efficiency of HMC by stopping trajectories when they start to turn back on themselves. The details of the sampler are beyond the scope of this tutorial, however it does alleviate the tuning issues mentioned previously in addition to improved efficiency. The only major related consideration for simple uses of Stan is the `max_treedepth` tuning parameter, which can improve acceptance probability and efficiency per iteration if increased, however it results in a substantial increase in the computation time.
+
+## When TO and NOT TO use Stan
+
+Stan is a powerful and flexible sampling package, however it is suited more to some situations than others. Stan will be useful to you if:
+
+  - You need greater flexibility in the model and/or prior specification. If you can write it down in Stan's language, Stan will handle the rest!
+  - You need greater efficiency than other samplers. Stan is much faster than other sampling packages such as JAGS or WinBUGS.
+
+Some situations where Stan may NOT be helpful:
+
+  - *discrete distributions*: An assumption of HMC is that the parameter space is continuous, and as a result Stan doesn't do well with discrete distributions. As a result, JAGS or WinBUGS may be a better option.
+  - *missing values*: FILL
+  - *Variable time intervals (ODEs)*: Unlike MATLAB, Stan's Ordinary Differential Equation (ODE) solver will only allow for fixed time intervals.
+  - *Divergences*: Certain posterior geometries can be too ``sharp'' for Stan to explore, and result in excessive divergences. If this occurs, reparameterisation or changing the model may be necessary. The more sophisticated method Reimannian Manifold HMC may also be useful, however this will need to be hand-coded. 
+
+## Resources
+
+You can find a more complete overview of Hamiltonian Monte Carlo in this [ArXiv paper](https://arxiv.org/abs/1206.1901) by Radford Neal, or for a an indepth overview of the geometrical concepts and theory try Michael Bentancourt's [ArXiv paper](https://arxiv.org/abs/1206.1901).
+
+For linear and generalised linear models, you can use the computational power of Stan without ever leaving the comfort of traditional R formulae using the [`brms`](https://mc-stan.org/users/interfaces/brms) R package.
+
+The [Stan website](https://mc-stan.org) contains a huge amount of information, including examples, installation notes for the R implementation of Stan as well as others, documentation including the [reference manual](https://mc-stan.org/docs/2_19/reference-manual), and a forum for questions and debugging.
+
+In our experience the developers at Stan have been very friendly, so if you find yourself stuck and can't resolve the issue via the forum or reference manual, you can [contact the developers](https://discourse.mc-stan.org/) to help you out.
+
+## Appendices
+
+### Solution to exercise:
+
+
