@@ -45,6 +45,15 @@ Stan models can be compiled in other platforms such as Python, MATLAB, Julia, St
 
 If you would like to use HPC during this tutorial, the procedure to follow is same as any other programming language. You may use the BRAG HPC [guide](https://github.com/ethangoan/hpc_guide) for this setup.  We do not cover how to setup Stan on Mac or any other operating system. 
 
+## Downloading the tutorial files
+
+To start the tutorial:
+  
+  1. Go to the github repository [brag-stan-guide](https://github.com/danwkenn/brag-stan-guide).
+  2. Click the green "Clone or Download" button above, and then "Download ZIP".
+  3. Unzip the repository in your desired location.
+  4. Open the file: `brag-stan-guide.Rproj`.
+
 ## Defining a model in Stan
 
 ---
@@ -141,7 +150,7 @@ cf.stanmodel <- stan_model(
 
 and then use the `sampling()` function:
 
-```{r,include = FALSE, eval = FALSE}
+```{r,include = TRUE, eval = FALSE}
 cf_result.stanfit <- sampling(
   object = cf.stanmodel,
   data = list(
@@ -592,7 +601,7 @@ The Stan model can recreate the observed dynamics reasonably well. In this examp
 
 ## Exercise: Fitting a time series model in Stan
 
-```{r,include=FALSE,warning=FALSE,message = FALSE}
+```{r,include=TRUE,warning=FALSE,message = FALSE,echo=FALSE}
 devtools::find_rtools(debug = TRUE)
 library(rstan)
 ```
@@ -651,6 +660,8 @@ generated quantities{
   }
 }
 ```
+
+To learn more about fitting a time series in Stan, check out the [Time Series chapter](https://mc-stan.org/docs/2_20/stan-users-guide/time-series-chapter.html) in the Stan User's Guide. 
 
 ## Hamiltonian Monte Carlo: the engine under the hood
 
