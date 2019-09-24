@@ -750,6 +750,10 @@ The [Stan website](https://mc-stan.org) contains a huge amount of information, i
 
 In our experience the developers at Stan have been very friendly, so if you find yourself stuck and can't resolve the issue via the forum or reference manual, you can [contact the developers](https://discourse.mc-stan.org/) to help you out.
 
+## Acknowledgements
+
+The basketball dataset was provided by Wade Hobbs from Australian Institute of Sport (AIS).
+
 ## Appendices
 
 ### Solution to exercise
