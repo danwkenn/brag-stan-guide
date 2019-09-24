@@ -11,10 +11,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Example
 
-```{r}
+```{r, include=FALSE}
 devtools::find_rtools(debug = TRUE)
 library(rstan)
+```
 
+```{r}
 data("nhtemp")
 plot(nhtemp,ylab = expression(Temperature ~(degree~"F")),xlab = "Year")
 ```
