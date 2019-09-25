@@ -85,7 +85,7 @@ data {
 }
 ```
 
-We now specify the parameters of the model. Suppose for illustration that instead of the standard bernoulli parameter $\theta \in \left[0,1\right]$ we are interested in the logit-probability parameter $\phi$:
+We now specify the parameters of the model. Suppose for illustration that instead of the standard Bernoulli parameter $\theta \in \left[0,1\right]$ we are interested in the logit-probability parameter $\phi$:
 \[
   \phi = \text{logit}{\left(\theta\right)} = \text{log}{\left(\frac{\theta}{1-\theta}\right)}
 \]
@@ -128,7 +128,7 @@ generated quantities {
 }
 ```
 
-The above blocks have been saved in a text file called `coin_flip.stan`. By using the `.stan` filetype, Rstudio knows it is a Stan model and applies the correct formatting to it. It also provides a syntax-checking function, so it can tell you when you've left off a "`;`" and the end of lines.
+The above blocks have been saved in a text file called `coin_flip.stan`. By using the `.stan` file type, Rstudio knows it is a Stan model and applies the correct formatting to it. It also provides a syntax-checking function, so it can tell you when you've left off a "`;`" and the end of lines.
 
 To run the code, we can either feed it straight into the `stan()` function:
 
@@ -162,7 +162,7 @@ cf_result.stanfit <- sampling(
 If the underlying file `models/coin_flip.stan` doesn't change, then Stan will only compile the model the first time `stan()` or `stan_model()` are called.
 
 There are two more blocks which may be of use:
-  - `functions`: For definining your own functions (see [Stan Reference Manual](https://mc-stan.org/docs/2_20/reference-manual/index.html) Chapter 9 for details)
+  - `functions`: For defining your own functions (see [Stan Reference Manual](https://mc-stan.org/docs/2_20/reference-manual/index.html) Chapter 9 for details)
   - `transformed data`: For declaring and defining intermediate values which are functions of your data. For example, for positive skewed data, you might model the log of the data instead of the raw data:
 
 ```{stan , output.var = "gen_quant", eval = FALSE, tidy = FALSE}
@@ -364,7 +364,7 @@ where $j = 1,...,  8$,   The measurements $y_j$ and uncertainties $\sigma_j$ are
 | G   |  18   |  10   |
 | H   |  12   |  18   |
 
-This is a well known example for Stan users.  We use this example here to illustrate  two things. First, to use the Stan program to *generate data from the model*, which may be used for prior predictive analysis or to validate the probablistic model. Second,  to study the effect of  *centered* and *non-centered* parametrisation  of the model  on MCMC diagnostics. 
+This is a well known example for Stan users.  We use this example here to illustrate  two things. First, to use the Stan program to *generate data from the model*, which may be used for prior predictive analysis or to validate the probabilistic model. Second,  to study the effect of  *centered* and *non-centered* parametrisation  of the model  on MCMC diagnostics. 
 We have already saved the data as `schools_data.RData` in the `data` folder. 
 
 ```{r, message=FALSE,warning=FALSE, eval = FALSE, echo=FALSE}
@@ -373,7 +373,7 @@ schools_data <- data.frame(y = c(28,  8, -3,  7, -1,  1, 18, 12),
 save(schools_data, file = "data/schools_data.RData", envir = .GlobalEnv)
 ```
 
-Sometimes we may wish to generate  *fake data* from our probablistic model to validate our model. For this, parameters are drawn from the priors, and then estimated afterwards from the model.  The problem with this approach is that ususally we have to consider two bits of code; data generation model and the estimation model. If we make a change in one model, we must reflect the change in the other model. This may not be an issue for simple models, but may be an issue for complex models. 
+Sometimes we may wish to generate  *fake data* from our probabilistic model to validate our model. For this, parameters are drawn from the priors, and then estimated afterwards from the model.  The problem with this approach is that usually we have to consider two bits of code; data generation model and the estimation model. If we make a change in one model, we must reflect the change in the other model. This may not be an issue for simple models, but may be an issue for complex models. 
 
 We can fix this issue  by making use of Stan's `generated quantities` block,  and using one piece of code for both purposes. We do this by evaluating the likelihood conditionally. If the likelihood is not evaluated, then the posterior predictive draws are same as the prior predictive draws - that is the fake data. 
 
@@ -414,7 +414,7 @@ generated quantities{
 
 ```
 
-The value assigned to the variable `run_estimation` determines if the likelihood is evaluated or not. If the value given to this varaible is $0$, then the likelihood is not computed, and the samples returned by  `y_sim` , defined in the `generated block`,  are the fake data. If the value of `run_estimation` is $1$, then the likelihood is evaluated and the samples returned by `y_sim` are the posterior predictions. Let us generate some data using this Stan program. 
+The value assigned to the variable `run_estimation` determines if the likelihood is evaluated or not. If the value given to this variable is $0$, then the likelihood is not computed, and the samples returned by  `y_sim` , defined in the `generated block`,  are the fake data. If the value of `run_estimation` is $1$, then the likelihood is evaluated and the samples returned by `y_sim` are the posterior predictions. Let us generate some data using this Stan program. 
 
 ```{r, message=F,warning=F, eval=F}
 
@@ -495,7 +495,7 @@ In some cases, divergences can be fixed by increasing the `adapt_delta` paramete
 pairs(schools_fit, pars = c("theta[1]","tau"), las = 1)
 ```
 
-We can see that most divergences (red spots) occurs when $\tau$ is near $0$. Let us now use a *non-centered* parametrise the model  to see if divergences are reduced. In non-centered parametrisation, we do not try to fit the hierarchical parameter ($\theta$) directly, but we fit  an extra parameter $\hat{\theta}_{j} \sim Normal(0,1)$, from which we can recover the hierarchical parameter using $\theta_{j} = \mu + \tau * \hat{\theta}_{j}$. We recover the parameter in the `transformed parameters` block.
+We can see that most divergences (red spots) occurs when $\tau$ is near $0$. Let us now use a *non-centered* parametrisation of the model  to see if divergences are reduced. In non-centered parametrisation, we do not try to fit the hierarchical parameter ($\theta$) directly, but we fit  an extra parameter $\hat{\theta}_{j} \sim Normal(0,1)$, from which we can recover the hierarchical parameter using $\theta_{j} = \mu + \tau * \hat{\theta}_{j}$. We recover the parameter in the `transformed parameters` block.
 
 ```{r, message=FALSE,warning=FALSE, eval = FALSE}
 //saved as 8school_non_centered.stan
@@ -608,7 +608,7 @@ legend(x = 40, y = 0.9, legend = c("Susc.", "Inf.", "Recov."),
        col = c("black",  "blue", "red"), lty = c(1, 1,1), bty="n")
 ```
 
-This gives us the *true* epidemic dynamics of the population.  In practice, it may not be possible to determine the proportion infecteds at each day, nor to determine disease status of all individuals at a given time.  Rather, we can take a sample of individuals from the population at various time points  and find out how many are infected. We expect binomially distributed error in these estimates, with probability of success given by the infected dynamic of the ODEs.  The sampling can be done as follows. 
+This gives us the *true* epidemic dynamics of the population.  In practice, it may not be possible to determine the proportion infected at each day, nor to determine disease status of all individuals at a given time.  Rather, we can take a sample of individuals from the population at various time points  and find out how many are infected. We expect binomially distributed error in these estimates, with probability of success given by the infected dynamic of the ODEs.  The sampling can be done as follows. 
 
 ```{r,eval = TRUE, warning=FALSE, message = FALSE}
 n_obs <- 30     # number of days sampled 
@@ -825,12 +825,12 @@ where
 Explanation for each parameter is:
 
   - $\alpha$ is an "intercept" temperature (it does not correspond exactly correspond to the expected temperature at $i=0$ as the stationary mean is $\alpha/\left(1-\beta\right)$$^\circ$F)
-  - $\beta$ is the first order autocorrelation parameter. If $\beta$ is 0, then there is no autocorrelation, whereas if $\beta$ is less than or greater than 0, then the current value $y_i$ will be dependent on the previous value $y_{i-1}$.
+  - $\beta$ is the first order auto-correlation parameter. If $\beta$ is 0, then there is no auto-correlation, whereas if $\beta$ is less than or greater than 0, then the current value $y_i$ will be dependent on the previous value $y_{i-1}$.
   - $\gamma$ is the linear trend, where each year the average temperature increases by $\gamma$$^\circ$F.
 
 Create a Stan model and use MCMC sampling in R to:
 
-  1. Estimate the first order autocorrelation in the model.
+  1. Estimate the first order auto-correlation in the model.
   2. Estimate the long term linear trend.
   3. Forecast the temperature for the next 20 years (1972 - 1991) after the data-set.
 
@@ -946,7 +946,7 @@ Some situations where Stan may NOT be helpful:
 
 You can find a more complete overview of Hamiltonian Monte Carlo in this [ArXiv paper](https://arxiv.org/abs/1206.1901) by Radford Neal, or for a an indepth overview of the geometrical concepts and theory try Michael Bentancourt's [ArXiv paper](https://arxiv.org/abs/1206.1901).
 
-For linear and generalised linear models, you can use the computational power of Stan without ever leaving the comfort of traditional R formulae using the [`brms`](https://mc-stan.org/users/interfaces/brms) R package.
+For linear and generalised linear models, you can use the computational power of Stan without ever leaving the comfort of traditional R formula using the [`brms`](https://mc-stan.org/users/interfaces/brms) R package.
 
 The [Stan website](https://mc-stan.org) contains a huge amount of information, including examples, installation notes for the R implementation of Stan as well as others, documentation including the [reference manual](https://mc-stan.org/docs/2_19/reference-manual), and a forum for questions and debugging.
 
@@ -1029,7 +1029,7 @@ We can get numerical summaries for your parameters as well:
 print(ts_ar1.stanfit,pars = c("gamma","alpha","beta","sigma"))
 ```
 
-We therefore find there is compelling evidence for a linear trend, where temperatures rise by 0.03(95\% CI: 0.01,0.05)$\circ$F per year. There is also very little evidence of autocorrelation, once the linear trend is taken into account, as the credible interval for $\beta$ covers 0 (-0.17,0.37).
+We therefore find there is compelling evidence for a linear trend, where temperatures rise by 0.03(95\% CI: 0.01,0.05)$\circ$F per year. There is also very little evidence of auto-correlation, once the linear trend is taken into account, as the credible interval for $\beta$ covers 0 (-0.17,0.37).
 
 We can extract and plot our forecasted temperatures using the `As.mcmc.list()` function. There may be a simpler way of converting the MCMC samples to a data-frame, however using the `do.call()` and `lapply()` functions are used here:
 
