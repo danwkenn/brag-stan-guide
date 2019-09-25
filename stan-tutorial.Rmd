@@ -938,7 +938,7 @@ Stan is a powerful and flexible sampling package, however it is suited more to s
 Some situations where Stan may NOT be helpful:
 
   - *discrete distributions*: An assumption of HMC is that the parameter space is continuous, and as a result Stan doesn't do well with discrete distributions. As a result, JAGS or WinBUGS may be a better option.
-  - *missing values*: FILL
+  - *missing values*: Imputation of missing values is a little more complicated on Stan since the data block assumes that the elements are known. See the Stan chapter 3.1 Missing Data for more details.
   - *Variable time intervals (ODEs)*: Unlike MATLAB, Stan's Ordinary Differential Equation (ODE) solver will only allow for fixed time intervals.
   - *Divergences*: Certain posterior geometries can be too ``sharp'' for Stan to explore, and result in excessive divergences. If this occurs, reparameterisation or changing the model may be necessary. The more sophisticated method Reimannian Manifold HMC may also be useful, however this will need to be hand-coded. 
 
