@@ -35,7 +35,7 @@ From our experience, it may take a while to setup *RStan*, so we recommend you t
   3. Create a local folder to store *RStan* package, its dependencies and all other packages used in this tutorial (eg.Documents/Stan-tutorial/r-libraries) 
   4. Open RStudio and use *.libPath()* function to direct RStudio session to the created folder
 ```R
-.libPaths("Documents/Stan-tutorial/r-libraries")
+.libPaths("path/to/directory")
 ```
   5. Follow the instructions given on  RStan-Getting-Started [page](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started) to install and load *RStan*.
 
@@ -957,6 +957,10 @@ If you want to learn more about Bayesian statistical inference, a good book to t
 ## Acknowledgements
 
 The basketball dataset was provided by Wade Hobbs from Australian Institute of Sport (AIS).
+
+## How to reference this workshop
+
+Aminath Shausan, Edgar Santos Fernandez, Daniel Kennedy (2019), Bayesian Research and Applications Group, QUT. [https://danwkenn.github.io/brag-stan-guide/](https://danwkenn.github.io/brag-stan-guide/)
 
 ## Appendices
 
