@@ -340,11 +340,213 @@ mcmc_acf(posterior, pars = c('beta[1]', 'beta[2]',
 
 ```
 
+## Example:  Fitting to Eight School Data
 
-## Example:  and code examples from Aminath (15 minutes)
-- simple 8 school example (Complete pooling) 
-- hierarchical 8 school example 
-- discuss about loo() package for model comparision if time permits 
+This is a hierarchical  Bayesian  model, which is used to study an educational experiment data which is described in Gelman et al. (2013). The purpose of the study was to examine the effects of a test preparation program conducted in eight different high schools in New Jersey. A separate randomised experiment was conducted in each school,  and the administrators of each school implemented the program in their own way.  The model is described as : 
+\[
+\begin{align*}
+  y_j  \sim  Normal(\theta_j, \sigma_j^{2}), \\
+   \theta_j  \sim Normal(\mu, \tau^{2}), \\
+    \mu  \sim  Normal(0, 5), \\
+    \tau  \sim HalfCauchy(0,5),
+\end{align*}
+\]
+where $j = 1,...,  8$,   The measurements $y_j$ and uncertainties $\sigma_j$ are the estimates and standard errors from separate regressions performed for each school, as shown in  in the following table.  
+
+| School|Estimated   effect, $y_j$ | Standard error of  effect, $\sigma_j$ |
+ |---------------|-------------|------|
+| A   |  28  | 15     |
+| B   |  8   | 10    |
+| C   |  -3   |  16   |
+| D   |  7   |  11   |
+| E   |  -1   |  9  |
+| F   |  1   |  11   |
+| G   |  18   |  10   |
+| H   |  12   |  18   |
+
+This is a well known example for Stan users.  We use this example here to illustrate  two things. First, to use the Stan program to *generate data from the model*, which may be used for prior predictive analysis or to validate the probablistic model. Second,  to study the effect of  *centered* and *non-centered* parametrisation  of the model  on MCMC diagnostics. 
+We have already saved the data as `schools_data.RData` in the `data` folder. 
+
+```{r, message=FALSE,warning=FALSE, eval = FALSE, echo=FALSE}
+schools_data <- data.frame(y = c(28,  8, -3,  7, -1,  1, 18, 12),
+                          sigma = c(15, 10, 16, 11,  9, 11, 10, 18))
+save(schools_data, file = "data/schools_data.RData", envir = .GlobalEnv)
+```
+
+Sometimes we may wish to generate  *fake data* from our probablistic model to validate our model. For this, parameters are drawn from the priors, and then estimated afterwards from the model.  The problem with this approach is that ususally we have to consider two bits of code; data generation model and the estimation model. If we make a change in one model, we must reflect the change in the other model. This may not be an issue for simple models, but may be an issue for complex models. 
+
+We can fix this issue  by making use of Stan's `generated quantities` block,  and using one piece of code for both purposes. We do this by evaluating the likelihood conditionally. If the likelihood is not evaluated, then the posterior predictive draws are same as the prior predictive draws - that is the fake data. 
+
+We use the following Stan program to simulate fake data from the eight school hierarchical model, illustrating the use of one piece of code for simulation and estimation. 
+
+```{r, message=FALSE,warning=FALSE, eval = FALSE}
+//saved as 8school_centered.stan
+
+data {
+  int<lower=0> J;         //number of schools 
+  real y[J];              // estimated treatment effects
+  real<lower=0> sigma[J]; // sd. error of effect estimates 
+  int<lower =0, upper =1> run_estimation; //a switch to evaluate likelihood (=1) or not (=0)
+}
+parameters {
+  real mu; 
+  real<lower=0> tau;
+  real theta[J];
+}
+model {
+  //priors
+  mu ~ normal(0,5);
+  tau ~ cauchy(0,5);
+  theta ~ normal(mu, tau);
+  
+  //evaluate the likelihood conditionally
+  if(run_estimation == 1){
+    y ~ normal(theta, sigma);
+  }
+}
+generated quantities{
+  real y_sim[J]; //array to hold simulated data
+ 
+    for(j in 1:J) {
+       y_sim[j] =  normal_rng(theta[j], sigma[j]);
+    }
+}
+
+```
+
+The value assigned to the variable `run_estimation` determines if the likelihood is evaluated or not. If the value given to this varaible is $0$, then the likelihood is not computed, and the samples returned by  `y_sim` , defined in the `generated block`,  are the fake data. If the value of `run_estimation` is $1$, then the likelihood is evaluated and the samples returned by `y_sim` are the posterior predictions. Let us generate some data using this Stan program. 
+
+```{r, message=F,warning=F, eval=F}
+
+# first load rstan
+library(rstan)
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+# then load the school data
+load('data/schools_data.RData')
+
+#prepare data to pass to Stan program
+stan_data <- list(J = 8,         
+             y =  schools_data$y,
+             sigma = schools_data$sigma, 
+             run_estimation = 0  #switch off likelihood
+            )
+
+schools_sim_data <-  stan("models/8school_centered.stan",  #the Stan program
+                         data = stan_data,        #data to be used by Stan program
+                         chains = 1,               #number of MCMC chains
+                         iter = 1000,               #number if iterations per chain
+                         control = list(adapt_delta = 0.99, max_treedepth = 15)
+                         #warmup = 1000
+                      )
+#save(schools_sim_data, file = "results/schools_sim_data.RData", envir = .GlobalEnv)
+
+# extract simulated data 
+fake_data <- as.data.frame(extract(schools_sim_data, pars = 'y_sim'))  
+```
+
+### Your  Turn
+
+Use the fake data corresponding to one of the iteration (eg. 1st iteration) to validate the model. For this, you will need to  assign  the value $1$ to `run_estimation` variable. 
+
+Note that the above Stan program provides a *centered* parametrisation of the hierarchical model. Let us fit   actual data using the above Stan program. 
+
+```{r, message=F,warning=F, eval=F}
+# prepare data to pass to Stan program
+stan_data <- list(J = 8,         
+             y =  schools_data$y,
+             sigma = schools_data$sigma, 
+             run_estimation = 1  #switch off likelihood
+            )
+
+schools_fit <-  stan("models/8school_centered.stan",  #the Stan program
+                         data = stan_data,        #data to be used by Stan program
+                         chains = 4,               #number of MCMC chains
+                         iter = 2500,               #number if iterations per chain
+                         #control = list(adapt_delta = 0.99, max_treedepth = 15)
+                         warmup = 1000
+                      )
+```
+
+```{r, message=T,warning=T, eval=T, echo=F}
+load('data/schools_data.RData')
+
+stan_data <- list(J = 8,         
+             y =  schools_data$y,
+             sigma = schools_data$sigma, 
+             run_estimation = 1  #switch off likelihood
+            )
+schools_fit <-  stan("models/8school_centered.stan",  #the Stan program
+                         data = stan_data,        #data to be used by Stan program
+                         chains = 4,               #number of MCMC chains
+                         iter = 2500,               #number if iterations per chain
+                         #control = list(adapt_delta = 0.99, max_treedepth = 15)
+                         warmup = 1000
+                      )
+#save(schools_fit, file = "results/schools_fit.RData", envir = .GlobalEnv)
+```
+
+There is a warning message regarding some divergent transitions. Divergences in HMC arise when the Hamiltonian transition encounters regions of extremely large curvature. Stan uses a heuristic to quickly identify these misbehaving trajectories, and hence label divergences, without having to wait for them to run all the way to infinity. Sometimes this issue  can be resolved by adjust the step size,  of the Hamiltonian transition. The smaller the step size the more accurate the trajectory and the less likely it will be mislabeled as a divergence.  In order to do this, we can increase the `adapt_delta` parameter from its default value of $0.8$ closer to its maximum value of $1$.
+
+In some cases, divergences can be fixed by increasing the `adapt_delta` parameter, but in other cases the model needs to be reparametrised to overcome divergences. If `adapt_delta` is increased the step size is decreased. To visualise where divergences occur we can use pairwise plots.   
+
+```{r, message=T,warning=T, eval=T, echo=T}
+pairs(schools_fit, pars = c("theta[1]","tau"), las = 1)
+```
+
+We can see that most divergences (red spots) occurs when $\tau$ is near $0$. Let us now use a *non-centered* parametrise the model  to see if divergences are reduced. In non-centered parametrisation, we do not try to fit the hierarchical parameter ($\theta$) directly, but we fit  an extra parameter $\hat{\theta}_{j} \sim Normal(0,1)$, from which we can recover the hierarchical parameter using $\theta_{j} = \mu + \tau * \hat{\theta}_{j}$. We recover the parameter in the `transformed parameters` block.
+
+```{r, message=FALSE,warning=FALSE, eval = FALSE}
+//saved as 8school_non_centered.stan
+data {
+  int<lower=0> J;         //number of schools 
+  real y[J];              // estimated treatment effects
+  real<lower=0> sigma[J]; // sd. error of effect estimates 
+  int<lower =0, upper =1> run_estimation; //a switch to evaluate likelihood (=1) or not (=0)
+}
+parameters {
+  real mu; 
+  real<lower=0> tau;
+  real theta_hat[J];
+}
+ transformed parameters {
+   real theta[J];
+   for (j in 1:J)
+        theta[j] = mu + tau * theta_hat[j];
+ }
+model {
+  //priors
+  mu ~ normal(0,5);
+  tau ~ cauchy(0,5);
+  theta_hat ~ normal(0,1);
+ //evaluate the likelihood conditionally
+  if(run_estimation == 1){
+    y ~ normal(theta, sigma);
+  }
+}
+generated quantities{
+  real y_sim[J]; //array to hold simulated data
+ 
+    for(j in 1:J) {
+       y_sim[j] =  normal_rng(theta[j], sigma[j]);
+    }
+}
+```
+
+Let us run the new model.  
+```{r, message=T,warning=T, eval=T, echo=F}
+schools_fit_ncp <-  stan("models/8school_non_centered.stan",  #the Stan program
+                         data = stan_data,        #data to be used by Stan program
+                         chains = 4,               #number of MCMC chains
+                         iter = 2500,               #number if iterations per chain
+                         #control = list(adapt_delta = 0.99, max_treedepth = 15)
+                         warmup = 1000
+                      )
+#save(schools_fit_ncp, file = "results/schools_fit_ncp.RData", envir = .GlobalEnv)
+```
+
+No divergences are produced. 
 
 ## Example: Fitting an Ordinary Differential Equation Model 
 
@@ -635,7 +837,7 @@ Create a Stan model and use MCMC sampling in R to:
 
 Use this code as a template for your Stan model:
 
-```{stan , output.var = "stan_template", eval = FALSE}
+```{r , output.var = "stan_template", eval = FALSE}
 data {
   int<lower=0> N;
   int<lower=2> N_new;
