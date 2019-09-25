@@ -2080,7 +2080,14 @@ generated quantities{
     }
 }</code></pre>
 <p>Let us run the new model.</p>
-<pre><code>## recompiling to avoid crashing R session</code></pre>
+<pre class="r"><code>schools_fit_ncp &lt;-  stan(&quot;models/8school_non_centered.stan&quot;,  #the Stan program
+                         data = stan_data,        #data to be used by Stan program
+                         chains = 4,               #number of MCMC chains
+                         iter = 2500,               #number if iterations per chain
+                         #control = list(adapt_delta = 0.99, max_treedepth = 15)
+                         warmup = 1000
+                      )
+#save(schools_fit_ncp, file = &quot;results/schools_fit_ncp.RData&quot;, envir = .GlobalEnv)</code></pre>
 <p>No divergences are produced.</p>
 </div>
 </div>
@@ -2408,7 +2415,7 @@ generated quantities{
 <p>Some situations where Stan may NOT be helpful:</p>
 <ul>
 <li><em>discrete distributions</em>: An assumption of HMC is that the parameter space is continuous, and as a result Stan doesn’t do well with discrete distributions. As a result, JAGS or WinBUGS may be a better option.</li>
-<li><em>missing values</em>: FILL</li>
+<li><em>missing values</em>: Imputation of missing values is a little more complicated on Stan since the data block assumes that the elements are known. See the Stan chapter 3.1 Missing Data for more details.</li>
 <li><em>Variable time intervals (ODEs)</em>: Unlike MATLAB, Stan’s Ordinary Differential Equation (ODE) solver will only allow for fixed time intervals.</li>
 <li><em>Divergences</em>: Certain posterior geometries can be too ``sharp’’ for Stan to explore, and result in excessive divergences. If this occurs, reparameterisation or changing the model may be necessary. The more sophisticated method Reimannian Manifold HMC may also be useful, however this will need to be hand-coded.</li>
 </ul>
@@ -2419,6 +2426,7 @@ generated quantities{
 <p>For linear and generalised linear models, you can use the computational power of Stan without ever leaving the comfort of traditional R formulae using the <a href="https://mc-stan.org/users/interfaces/brms"><code>brms</code></a> R package.</p>
 <p>The <a href="https://mc-stan.org">Stan website</a> contains a huge amount of information, including examples, installation notes for the R implementation of Stan as well as others, documentation including the <a href="https://mc-stan.org/docs/2_19/reference-manual">reference manual</a>, and a forum for questions and debugging.</p>
 <p>In our experience the developers at Stan have been very friendly, so if you find yourself stuck and can’t resolve the issue via the forum or reference manual, you can <a href="https://discourse.mc-stan.org/">contact the developers</a> to help you out.</p>
+<p>If you want to learn more about Bayesian statistical inference, a good book to try is <a href="http://www.stat.columbia.edu/~gelman/book/"><em>Bayesian Data Analysis</em></a> by Andrew Gelman. If you are QUT staff or HDR, then you can find the most recent edition online via the library.</p>
 </div>
 <div id="acknowledgements" class="section level2">
 <h2>Acknowledgements</h2>

@@ -535,7 +535,7 @@ generated quantities{
 ```
 
 Let us run the new model.  
-```{r, message=T,warning=T, eval=T, echo=F}
+```{r, message=T,warning=T, eval=T, echo=T}
 schools_fit_ncp <-  stan("models/8school_non_centered.stan",  #the Stan program
                          data = stan_data,        #data to be used by Stan program
                          chains = 4,               #number of MCMC chains
@@ -951,6 +951,8 @@ For linear and generalised linear models, you can use the computational power of
 The [Stan website](https://mc-stan.org) contains a huge amount of information, including examples, installation notes for the R implementation of Stan as well as others, documentation including the [reference manual](https://mc-stan.org/docs/2_19/reference-manual), and a forum for questions and debugging.
 
 In our experience the developers at Stan have been very friendly, so if you find yourself stuck and can't resolve the issue via the forum or reference manual, you can [contact the developers](https://discourse.mc-stan.org/) to help you out.
+
+If you want to learn more about Bayesian statistical inference, a good book to try is [*Bayesian Data Analysis*](http://www.stat.columbia.edu/~gelman/book/) by Andrew Gelman. If you are QUT staff or HDR, then you can find the most recent edition online via the library.
 
 ## Acknowledgements
 
